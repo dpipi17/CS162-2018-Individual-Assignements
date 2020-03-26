@@ -1,19 +1,17 @@
-SRCS=shell.c tokenizer.c
-EXECUTABLES=shell
+CFLAGS=-g -Wall -std=c99 -D_POSIX_SOURCE -D_BSD_SOURCE -D_XOPEN_SOURCE=700 -fPIC
+TEST_CFLAGS=-Wl,-rpath=.
+TEST_LDFLAGS=-ldl
 
-CC=gcc
-CFLAGS=-g -Wall -std=gnu99
-LDFLAGS=
+all: hw3lib.so mm_test
 
-OBJS=$(SRCS:.c=.o)
+hw3lib.so: mm_alloc.o
+	gcc -shared -o $@ $^
 
-all: $(EXECUTABLES)
+mm_alloc.o: mm_alloc.c
+	gcc $(CFLAGS) -c -o $@ $^
 
-$(EXECUTABLES): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $@
-
-.c.o:
-	$(CC) $(CFLAGS) -c $< -o $@
+mm_test: mm_test.c
+	gcc $(CFLAGS) $(TEST_CFLAGS) -o $@ $^ $(TEST_LDFLAGS)
 
 clean:
-	rm -rf $(EXECUTABLES) $(OBJS)
+	rm -rf hw3lib.so mm_alloc.o mm_test

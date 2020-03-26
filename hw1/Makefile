@@ -1,25 +1,19 @@
-EXECUTABLES=words lwords
+SRCS=shell.c tokenizer.c
+EXECUTABLES=shell
+
 CC=gcc
 CFLAGS=-g -Wall -std=gnu99
+LDFLAGS=
 
-.PHONY: all clean
+OBJS=$(SRCS:.c=.o)
 
 all: $(EXECUTABLES)
 
-words: words.o word_helpers.o word_count.o
-lwords: lwords.o word_count_l.o word_helpers.o list.o debug.o
+$(EXECUTABLES): $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -o $@
 
-$(EXECUTABLES):
-	$(CC) $(LDFLAGS) $^ -o $@
-
-lwords.o: words.c
-word_count_l.o: word_count_l.c
-
-lwords.o word_count_l.o:
-	$(CC) $(CFLAGS) -DPINTOS_LIST -c $< -o $@
-
-%.o: %.c
+.c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(EXECUTABLES) *.o
+	rm -rf $(EXECUTABLES) $(OBJS)
