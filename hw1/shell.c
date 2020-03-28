@@ -29,6 +29,7 @@ pid_t shell_pgid;
 
 int cmd_pwd(struct tokens *tokens);
 int cmd_cd(struct tokens *tokens);
+int cmd_execute(struct tokens *tokens);
 int cmd_exit(struct tokens *tokens);
 int cmd_help(struct tokens *tokens);
 
@@ -98,6 +99,30 @@ int cmd_cd(unused struct tokens *tokens) {
   return 1;
 }
 
+int cmd_execute(unused struct tokens *tokens) {
+  int child_pid, status;
+  child_pid = fork();
+  char** args = NULL;
+
+  if (child_pid > 0) { /* Parent Process */
+    wait(&status);
+  } else if (child_pid == 0) { /* Child Process */
+    size_t tokens_size = tokens_get_length(tokens);
+    args = malloc((tokens_size + 1) * sizeof(char*));
+
+    args[tokens_size] = NULL;
+    for (int i = 0; i < tokens_size; i++) {
+      args[i] = tokens_get_token(tokens, i);
+    }
+    
+    execv(args[0], args);
+    printf("error: no such program or illegal arguments\n");
+  }
+
+  free(args);
+  return 1;
+}
+
 /* Looks up the built-in command, if it exists. */
 int lookup(char cmd[]) {
   for (unsigned int i = 0; i < sizeof(cmd_table) / sizeof(fun_desc_t); i++)
@@ -152,8 +177,9 @@ int main(unused int argc, unused char *argv[]) {
     if (fundex >= 0) {
       cmd_table[fundex].fun(tokens);
     } else {
-      /* REPLACE this to run commands as programs. */
-      fprintf(stdout, "This shell doesn't know how to run programs.\n");
+      if (tokens_get_length(tokens) != 0) {
+        cmd_execute(tokens);
+      }
     }
 
     if (shell_is_interactive)
