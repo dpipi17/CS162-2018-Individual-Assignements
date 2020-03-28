@@ -27,6 +27,8 @@ struct termios shell_tmodes;
 /* Process group id for the shell */
 pid_t shell_pgid;
 
+int cmd_pwd(struct tokens *tokens);
+int cmd_cd(struct tokens *tokens);
 int cmd_exit(struct tokens *tokens);
 int cmd_help(struct tokens *tokens);
 
@@ -41,6 +43,8 @@ typedef struct fun_desc {
 } fun_desc_t;
 
 fun_desc_t cmd_table[] = {
+  {cmd_pwd, "pwd", "prints current working directory"},
+  {cmd_cd, "cd", "takes one argument, a directory path, and changes the current working directory to that directory"},
   {cmd_help, "?", "show this help menu"},
   {cmd_exit, "exit", "exit the command shell"},
 };
@@ -55,6 +59,43 @@ int cmd_help(unused struct tokens *tokens) {
 /* Exits this shell */
 int cmd_exit(unused struct tokens *tokens) {
   exit(0);
+}
+
+/* Prints current working directory */
+int cmd_pwd(unused struct tokens *tokens) {
+  int path_size = 1024;
+  char* path = malloc(path_size * sizeof(char));
+
+  while(getcwd(path, path_size * sizeof(char)) == NULL) {
+    path_size *= 2;
+    path = realloc(path, path_size * sizeof(char));
+    if (path_size > 10000) break;
+  }
+
+  if (path != NULL) {
+    printf("%s\n", path);
+  } else {
+    printf("error: getcwd error");
+  }
+  
+  free(path);
+  return 1;
+}
+
+/* Takes one argument, a directory path, and changes the current working directory to that directory */
+int cmd_cd(unused struct tokens *tokens) {
+  char * new_directory_path = tokens_get_token(tokens, 1);
+  if (new_directory_path == NULL) {
+    new_directory_path = getenv("HOME");
+  }
+
+  if (chdir(new_directory_path) != 0) {
+    printf("error: can not find such directory\n");
+  } else {
+    printf("%s\n", new_directory_path);
+  }
+
+  return 1;
 }
 
 /* Looks up the built-in command, if it exists. */
