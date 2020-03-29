@@ -134,7 +134,7 @@ void get_executable_program_name(char * program_name) {
 int cmd_execute(unused struct tokens *tokens) {
   int child_pid, status;
   child_pid = fork();
-  
+
   if (child_pid > 0) { /* Parent Process */
     wait(&status);
   } else if (child_pid == 0) { /* Child Process */
@@ -149,10 +149,30 @@ int cmd_execute(unused struct tokens *tokens) {
     }
     args[tokens_size] = NULL;
     
+    int in_out = -1;
+    if (tokens_size > 2) {
+      if (strcmp(args[tokens_size - 2], "<") == 0) {
+          in_out = 1;
+          freopen(args[tokens_size - 1], "r", stdin);
+      } else if (strcmp(args[tokens_size - 2], ">") == 0) { 
+          in_out = 0;
+          freopen(args[tokens_size - 1], "w", stdout);
+      }
+
+      if (strcmp(args[tokens_size - 2], "<") == 0 || strcmp(args[tokens_size - 2], ">") == 0) {
+        args[tokens_size - 2] = NULL;
+        args[tokens_size - 1] = NULL;
+      }
+    }
+
     execv(program_name, args);
     printf("error: no such program or illegal arguments\n");
     free(program_name);
     free(args);
+
+    if (in_out != -1) {
+      fclose(in_out == 1 ? stdin : stdout);
+    }
     exit(1);
   }
 
