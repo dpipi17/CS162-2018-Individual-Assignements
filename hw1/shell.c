@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include "tokenizer.h"
 
@@ -26,6 +27,9 @@ struct termios shell_tmodes;
 
 /* Process group id for the shell */
 pid_t shell_pgid;
+
+/* To check if program executable */
+struct stat sb;
 
 int cmd_pwd(struct tokens *tokens);
 int cmd_cd(struct tokens *tokens);
@@ -91,7 +95,7 @@ int cmd_cd(unused struct tokens *tokens) {
   }
 
   if (chdir(new_directory_path) != 0) {
-    printf("error: can not find such directory\n");
+    printf("cd: No such file or directory\n");
   } else {
     printf("%s\n", new_directory_path);
   }
@@ -99,27 +103,59 @@ int cmd_cd(unused struct tokens *tokens) {
   return 1;
 }
 
+bool executable (char * program_name) {
+  return (stat(program_name, &sb) == 0 && sb.st_mode & S_IXUSR);
+}
+
+void get_executable_program_name(char * program_name) {
+  if (executable(program_name)) {
+    return;
+  }
+
+  char* token = strtok(getenv("PATH"), ":");
+  while(token) {
+    char* curr_path = strdup(token);
+    curr_path = strcat(curr_path, "/");
+    curr_path = strcat(curr_path, program_name);
+    
+    if (executable(curr_path)) {
+      program_name = realloc(program_name, strlen(curr_path) + 1);
+      program_name = strcpy(program_name, curr_path);
+      free(curr_path);
+      return;
+    } 
+    
+    token = strtok(NULL, ":");
+    free(curr_path);
+  }
+  
+}
+
 int cmd_execute(unused struct tokens *tokens) {
   int child_pid, status;
   child_pid = fork();
-  char** args = NULL;
-
+  
   if (child_pid > 0) { /* Parent Process */
     wait(&status);
   } else if (child_pid == 0) { /* Child Process */
+    char* program_name = strdup(tokens_get_token(tokens, 0));
     size_t tokens_size = tokens_get_length(tokens);
-    args = malloc((tokens_size + 1) * sizeof(char*));
+    char** args = malloc((tokens_size + 1) * sizeof(char*));
 
-    args[tokens_size] = NULL;
-    for (int i = 0; i < tokens_size; i++) {
+    get_executable_program_name(program_name);
+    args[0] = program_name;
+    for (int i = 1; i < tokens_size; i++) {
       args[i] = tokens_get_token(tokens, i);
     }
+    args[tokens_size] = NULL;
     
-    execv(args[0], args);
+    execv(program_name, args);
     printf("error: no such program or illegal arguments\n");
+    free(program_name);
+    free(args);
+    exit(1);
   }
 
-  free(args);
   return 1;
 }
 
