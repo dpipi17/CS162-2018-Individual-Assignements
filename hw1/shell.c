@@ -157,7 +157,7 @@ int cmd_execute(unused struct tokens *tokens) {
       printf("[%d]\n", child_pid);
     } else {
       tcsetpgrp(shell_terminal, getpgid(child_pid));
-      wait(&status);
+      waitpid(child_pid, &status, WUNTRACED);
       tcsetpgrp(shell_terminal, getpgid(0));
     }
 
