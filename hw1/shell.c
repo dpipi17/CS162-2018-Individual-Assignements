@@ -160,7 +160,7 @@ int cmd_execute(unused struct tokens *tokens) {
       wait(&status);
       tcsetpgrp(shell_terminal, getpgid(0));
     }
-    
+
   } else if (child_pid == 0) { /* Child Process */
     setpgid(getpid(), getpid());
     
@@ -212,7 +212,7 @@ void set_signals(__sighandler_t constant) {
   signal(SIGINT, constant);
   signal(SIGQUIT, constant);
   signal(SIGTSTP, constant);
-  signal(SIGCHLD, SIG_DFL);
+  signal(SIGCHLD, constant);
   signal(SIGCONT, constant);
   signal(SIGTTIN, constant);
   signal(SIGTTOU, constant);
