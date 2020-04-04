@@ -34,8 +34,10 @@ struct stat sb;
 int cmd_pwd(struct tokens *tokens);
 int cmd_cd(struct tokens *tokens);
 int cmd_execute(struct tokens *tokens);
+int cmd_wait(unused struct tokens *tokens);
 int cmd_exit(struct tokens *tokens);
 int cmd_help(struct tokens *tokens);
+void set_signals(__sighandler_t constant);
 
 /* Built-in command functions take token array (see parse.h) and return int */
 typedef int cmd_fun_t(struct tokens *tokens);
@@ -50,6 +52,7 @@ typedef struct fun_desc {
 fun_desc_t cmd_table[] = {
   {cmd_pwd, "pwd", "prints current working directory"},
   {cmd_cd, "cd", "takes one argument, a directory path, and changes the current working directory to that directory"},
+  {cmd_wait, "wait", "Waits all child processes before they finish their work "},
   {cmd_help, "?", "show this help menu"},
   {cmd_exit, "exit", "exit the command shell"},
 };
@@ -103,6 +106,12 @@ int cmd_cd(unused struct tokens *tokens) {
   return 1;
 }
 
+/* Waits all children before they finish their work */
+int cmd_wait(unused struct tokens *tokens) {
+  while(wait(NULL) > 0){}
+  return 1;
+}
+
 bool executable (char * program_name) {
   return (stat(program_name, &sb) == 0 && sb.st_mode & S_IXUSR);
 }
@@ -133,22 +142,38 @@ void get_executable_program_name(char * program_name) {
 
 int cmd_execute(unused struct tokens *tokens) {
   int child_pid, status;
+  bool is_background_process = false;
+  size_t tokens_size = tokens_get_length(tokens);
+  if (strcmp(tokens_get_token(tokens, tokens_size - 1), "&") == 0) {
+    tokens_size--;
+    is_background_process = true;
+  }
+
   child_pid = fork();
-
   if (child_pid > 0) { /* Parent Process */
-    wait(&status);
+    setpgid(child_pid, child_pid);
+    
+    if (is_background_process) {
+      printf("[%d]\n", child_pid);
+    } else {
+      tcsetpgrp(shell_terminal, getpgid(child_pid));
+      wait(&status);
+      tcsetpgrp(shell_terminal, getpgid(0));
+    }
+    
   } else if (child_pid == 0) { /* Child Process */
+    setpgid(getpid(), getpid());
+    
     char* program_name = strdup(tokens_get_token(tokens, 0));
-    size_t tokens_size = tokens_get_length(tokens);
     char** args = malloc((tokens_size + 1) * sizeof(char*));
-
+    
     get_executable_program_name(program_name);
     args[0] = program_name;
     for (int i = 1; i < tokens_size; i++) {
       args[i] = tokens_get_token(tokens, i);
     }
     args[tokens_size] = NULL;
-    
+
     int in_out = -1;
     if (tokens_size > 2) {
       if (strcmp(args[tokens_size - 2], "<") == 0) {
@@ -165,6 +190,10 @@ int cmd_execute(unused struct tokens *tokens) {
       }
     }
 
+    if (!is_background_process) {
+      set_signals(SIG_DFL);
+    }
+    
     execv(program_name, args);
     printf("error: no such program or illegal arguments\n");
     free(program_name);
@@ -177,6 +206,16 @@ int cmd_execute(unused struct tokens *tokens) {
   }
 
   return 1;
+}
+
+void set_signals(__sighandler_t constant) {
+  signal(SIGINT, constant);
+  signal(SIGQUIT, constant);
+  signal(SIGTSTP, constant);
+  signal(SIGCHLD, SIG_DFL);
+  signal(SIGCONT, constant);
+  signal(SIGTTIN, constant);
+  signal(SIGTTOU, constant);
 }
 
 /* Looks up the built-in command, if it exists. */
@@ -222,6 +261,9 @@ int main(unused int argc, unused char *argv[]) {
   /* Please only print shell prompts when standard input is not a tty */
   if (shell_is_interactive)
     fprintf(stdout, "%d: ", line_num);
+
+  /* Ignore signals */
+  set_signals(SIG_IGN);
 
   while (fgets(line, 4096, stdin)) {
     /* Split our line into words. */
