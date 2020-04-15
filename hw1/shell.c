@@ -169,26 +169,29 @@ int cmd_execute(unused struct tokens *tokens) {
     
     get_executable_program_name(program_name);
     args[0] = program_name;
-    for (int i = 1; i < tokens_size; i++) {
-      args[i] = tokens_get_token(tokens, i);
-    }
-    args[tokens_size] = NULL;
-
+    int args_num = 1;
+    char * curr_token;
     int in_out = -1;
-    if (tokens_size > 2) {
-      if (strcmp(args[tokens_size - 2], "<") == 0) {
-          in_out = 1;
-          freopen(args[tokens_size - 1], "r", stdin);
-      } else if (strcmp(args[tokens_size - 2], ">") == 0) { 
-          in_out = 0;
-          freopen(args[tokens_size - 1], "w", stdout);
-      }
-
-      if (strcmp(args[tokens_size - 2], "<") == 0 || strcmp(args[tokens_size - 2], ">") == 0) {
-        args[tokens_size - 2] = NULL;
-        args[tokens_size - 1] = NULL;
+    bool in_open = false, out_open = false;
+    for (int i = 1; i < tokens_size; i++) {
+      curr_token = tokens_get_token(tokens, i);
+      if (strcmp(curr_token, "<") == 0) {
+        in_out = 1;
+      } else if (strcmp(curr_token, ">") == 0) { 
+        in_out = 0;
+      } else if (in_out == 1) {
+        freopen(curr_token, "r", stdin);
+        in_out = -1;
+        in_open = true;
+      } else if (in_out == 0) {
+        freopen(curr_token, "w", stdout);
+        in_out = -1;
+        out_open = true;
+      } else {
+        args[args_num++] = curr_token;
       }
     }
+    args[args_num] = NULL;
 
     if (!is_background_process) {
       set_signals(SIG_DFL);
@@ -199,9 +202,8 @@ int cmd_execute(unused struct tokens *tokens) {
     free(program_name);
     free(args);
 
-    if (in_out != -1) {
-      fclose(in_out == 1 ? stdin : stdout);
-    }
+    if (in_open) fclose(stdin);
+    if (out_open) fclose(stdout);
     exit(1);
   }
 
