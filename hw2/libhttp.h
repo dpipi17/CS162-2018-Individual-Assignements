@@ -44,4 +44,18 @@ void http_send_data(int fd, char *data, size_t size);
  */
 char *http_get_mime_type(char *file_name);
 
+int contains_index_html(char* path);
+
+char* generate_content_from_directory(char* directory_name);
+
+size_t get_content_length(char* file_name);
+
+char* get_content(char* file_name);
+
+int is_directory(char* path);
+
+int is_file(char* path);
+
+char * concat_strings(char* first, char* second);
+
 #endif

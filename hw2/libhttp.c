@@ -6,6 +6,9 @@
 
 #include "libhttp.h"
 
+#include <sys/stat.h>
+#include <dirent.h>
+
 #define LIBHTTP_REQUEST_MAX_SIZE 8192
 
 void http_fatal_error(char *message) {
@@ -143,4 +146,88 @@ char *http_get_mime_type(char *file_name) {
   } else {
     return "text/plain";
   }
+}
+
+char* generate_content_from_directory(char* directory_name) {
+  char* result = (char*)malloc(2048);
+  
+  DIR * directory;
+  struct dirent *entry;
+  directory = opendir(directory_name);
+  
+  
+  char * line  = (char *)malloc(1024);
+  sprintf(line, " Directory: %s <br> ", directory_name);
+  strcpy(result, line);
+  free(line);
+  while((entry = readdir(directory))) {
+    
+    line = (char *)malloc(1024);
+    if(strcmp(entry->d_name, "..")) {
+      sprintf(line, " <a href=\"%s\"> %s </a> <br> ", entry->d_name, entry->d_name);
+    } else {
+      sprintf(line, " <a href=\"%s\"> %s </a> <br> ", entry->d_name, "parent");
+    }
+    
+    strcat(result, line);
+    free(line);
+  }
+
+  closedir(directory);
+  return result;
+}
+
+size_t get_content_length(char* file_name) {
+  struct stat file_stat;
+  if(stat(file_name, &file_stat) == 0) {
+    return file_stat.st_size;
+  }
+  return 0;
+}
+
+char* get_content(char* file_name) {
+  size_t content_length = get_content_length(file_name);
+  FILE * file = fopen(file_name, "r");
+  
+  char * content = malloc(content_length);
+  fread(content, sizeof(char), content_length, file);
+  fclose(file);
+  return content;
+}
+
+int contains_index_html(char* path) {
+  char * full_file_name;
+  full_file_name = concat_strings(path, "index.html");
+        
+  if(is_file(full_file_name)) {
+    return 1;
+  }
+  return 0;
+}
+
+int is_directory(char* path) {
+    struct stat path_stat;
+    if(stat(path, &path_stat) == 0) {
+      return S_ISDIR(path_stat.st_mode);
+    }
+    return 0;
+}
+
+int is_file(char* path) {
+  struct stat path_stat;
+  if(stat(path, &path_stat) == 0) {
+    return S_ISREG(path_stat.st_mode);
+  }
+  return 0;
+}
+
+char* concat_strings(char* first, char* second) {
+  char * result;
+  size_t length = strlen(first) + strlen(second) + 1;
+  result = (char *)malloc(sizeof(char) * length);
+
+  strcpy(result, first);
+  strcat(result, second);
+
+  return result;
 }

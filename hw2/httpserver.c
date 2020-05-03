@@ -13,7 +13,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <unistd.h>
 
 #include "libhttp.h"
 #include "wq.h"
@@ -32,6 +31,19 @@ char *server_proxy_hostname;
 int server_proxy_port;
 
 
+
+void not_found_error(int fd) {
+	http_start_response(fd, 404);
+	http_send_header(fd, "Content-Type", "text/html");
+	http_end_headers(fd);
+  http_send_string(fd,
+    "<center>"
+    "<h1> 404 </h1>"
+    "<hr>"
+    "<p> File Not Found </p>"
+    "</center>");
+}
+
 /*
  * Reads an HTTP request from stream (fd), and writes an HTTP response
  * containing:
@@ -44,23 +56,57 @@ int server_proxy_port;
  *   4) Send a 404 Not Found response.
  */
 void handle_files_request(int fd) {
-
-  /*
-   * TODO: Your solution for Task 1 goes here! Feel free to delete/modify *
-   * any existing code.
-   */
-
   struct http_request *request = http_request_parse(fd);
+  
+  char * full_path;
+  full_path = concat_strings(server_files_directory, request->path);
+
+  char * content;
+  char* full_file_name = NULL;
+
+  if(full_path[strlen(full_path) - 1] == '/') {
+    if((is_directory(full_path) == 0)) {
+      not_found_error(fd);
+      free(full_path);
+      close(fd);
+      return;
+    }
+
+    if(contains_index_html(full_path)) {
+      full_file_name = concat_strings(full_path, "index.html");
+      content = get_content(full_file_name);
+    } else {
+      content = generate_content_from_directory(full_path);
+    }
+  } else if(is_file(full_path)) {
+    full_file_name = strdup(full_path);
+    content = get_content(full_file_name);
+  } else {
+    not_found_error(fd);
+    free(full_path);
+    close(fd);
+    return;
+  }
+  
+  size_t content_length;
+  content_length = full_file_name == NULL ? strlen(content) : get_content_length(full_file_name);
+  char content_length_str[100];
+  snprintf(content_length_str, sizeof(content_length_str), "%zu", content_length);
+  printf("%zu\n", content_length);
 
   http_start_response(fd, 200);
-  http_send_header(fd, "Content-Type", "text/html");
+  http_send_header(fd, "Content-Type", full_file_name == NULL ? "text/html" : http_get_mime_type(full_file_name));
+  http_send_header(fd, "Content-Length", content_length_str);
   http_end_headers(fd);
-  http_send_string(fd,
-      "<center>"
-      "<h1>Welcome to httpserver!</h1>"
-      "<hr>"
-      "<p>Nothing's here yet.</p>"
-      "</center>");
+  http_send_string(fd, content);
+  
+  free(content);
+  free(full_path);
+  
+  if (full_file_name != NULL) {
+    free(full_file_name);
+  }
+  close(fd);
 }
 
 
