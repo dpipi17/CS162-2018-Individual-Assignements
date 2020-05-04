@@ -17,6 +17,13 @@
 #include "libhttp.h"
 #include "wq.h"
 
+struct proxy_node {
+  int from;
+  int to;
+  int * finished;
+  pthread_mutex_t * mutex;
+};
+
 /*
  * Global configuration variables.
  * You need to use these in your implementation of handle_files_request and
@@ -107,8 +114,39 @@ void handle_files_request(int fd) {
   if (full_file_name != NULL) {
     free(full_file_name);
   }
+  close(fd);
 }
 
+
+void proxy_thread_job(void * args) {
+  struct proxy_node * node;
+  node = (struct proxy_node *)args;
+  
+  char buffer[50000];
+
+  int read_bytes_size, write_bytes_size;
+  while (1) {
+    read_bytes_size = read(node->from, buffer, sizeof(buffer) - 1);
+    if (read_bytes_size <= 0) break;
+    
+    write_bytes_size = write(node->to, buffer, read_bytes_size);
+    if (write_bytes_size <= 0) break;
+  }
+
+  pthread_mutex_lock(node->mutex);
+  if (*node->finished == 0) {
+    *node->finished = 1;
+    if (shutdown(node->from, SHUT_RDWR) == -1) {
+      close(node->from);
+    }
+
+    if (shutdown(node->to, SHUT_RDWR) == -1) {
+      close(node->to);
+    }
+  }
+  pthread_mutex_unlock(node->mutex);
+  pthread_exit(NULL);
+}
 
 /*
  * Opens a connection to the proxy target (hostname=server_proxy_hostname and
@@ -122,7 +160,7 @@ void handle_files_request(int fd) {
  *   +--------+     +------------+     +--------------+
  */
 void handle_proxy_request(int fd) {
-
+  printf("handle_proxy_request------\n");
   /*
   * The code below does a DNS lookup of server_proxy_hostname and 
   * opens a connection to it. Please do not modify.
@@ -164,9 +202,30 @@ void handle_proxy_request(int fd) {
 
   }
 
-  /* 
-  * TODO: Your solution for task 3 belongs here! 
-  */
+  int finished = 0;
+  pthread_mutex_t mutex;
+  pthread_mutex_init(&mutex, NULL);
+
+  struct proxy_node first_node;
+  first_node.from = client_socket_fd;
+  first_node.to = fd;
+  first_node.finished = &finished;
+  first_node.mutex = &mutex;
+  pthread_t first_thread;
+  pthread_create(&first_thread, NULL, (void*)&proxy_thread_job, &first_node);
+
+  struct proxy_node second_node;
+  second_node.from = fd;
+  second_node.to = client_socket_fd;
+  second_node.finished = &finished;
+  second_node.mutex = &mutex;
+  pthread_t second_thread;
+  pthread_create(&second_thread, NULL, (void*)&proxy_thread_job, &second_node);
+
+  pthread_join(first_thread, NULL);
+  pthread_join(second_thread, NULL);
+
+  pthread_mutex_destroy(&mutex);
 }
 
 void* thread_job() {
@@ -175,7 +234,6 @@ void* thread_job() {
     int client_socket_fd;
     client_socket_fd = wq_pop(&work_queue);
     request_handler_for_thread(client_socket_fd);
-    close(client_socket_fd);
   } 
 
   return NULL;
@@ -251,14 +309,7 @@ void serve_forever(int *socket_number, void (*request_handler)(int)) {
         inet_ntoa(client_address.sin_addr),
         client_address.sin_port);
 
-    // TODO: Change me?
-    //request_handler(client_socket_number);
-    wq_push(&work_queue, client_socket_number);
-    
-
-    printf("Accepted connection from %s on port %d\n",
-        inet_ntoa(client_address.sin_addr),
-        client_address.sin_port);
+    wq_push(&work_queue, client_socket_number);    
   }
 
   shutdown(*socket_number, SHUT_RDWR);
