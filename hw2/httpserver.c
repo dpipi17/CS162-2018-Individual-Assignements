@@ -24,6 +24,7 @@
  * command line arguments (already implemented for you).
  */
 wq_t work_queue;
+void (*request_handler_for_thread)(int);
 int num_threads;
 int server_port;
 char *server_files_directory;
@@ -56,6 +57,7 @@ void not_found_error(int fd) {
  *   4) Send a 404 Not Found response.
  */
 void handle_files_request(int fd) {
+  printf("handle_files_request\n");
   struct http_request *request = http_request_parse(fd);
   
   char * full_path;
@@ -92,7 +94,6 @@ void handle_files_request(int fd) {
   content_length = full_file_name == NULL ? strlen(content) : get_content_length(full_file_name);
   char content_length_str[100];
   snprintf(content_length_str, sizeof(content_length_str), "%zu", content_length);
-  printf("%zu\n", content_length);
 
   http_start_response(fd, 200);
   http_send_header(fd, "Content-Type", full_file_name == NULL ? "text/html" : http_get_mime_type(full_file_name));
@@ -106,7 +107,6 @@ void handle_files_request(int fd) {
   if (full_file_name != NULL) {
     free(full_file_name);
   }
-  close(fd);
 }
 
 
@@ -169,11 +169,28 @@ void handle_proxy_request(int fd) {
   */
 }
 
+void* thread_job() {
+
+  while (1) {
+    int client_socket_fd;
+    client_socket_fd = wq_pop(&work_queue);
+    request_handler_for_thread(client_socket_fd);
+    close(client_socket_fd);
+  } 
+
+  return NULL;
+}
+
 
 void init_thread_pool(int num_threads, void (*request_handler)(int)) {
-  /*
-   * TODO: Part of your solution for Task 2 goes here!
-   */
+  pthread_t * threads;
+  threads = malloc(sizeof(pthread_t) * num_threads);
+  request_handler_for_thread = request_handler;
+
+  int i;
+  for(i = 0; i < num_threads; i++) {
+    pthread_create(&threads[i], NULL, &thread_job, NULL);
+  }
 }
 
 /*
@@ -217,7 +234,8 @@ void serve_forever(int *socket_number, void (*request_handler)(int)) {
   }
 
   printf("Listening on port %d...\n", server_port);
-
+  
+	wq_init(&work_queue);
   init_thread_pool(num_threads, request_handler);
 
   while (1) {
@@ -234,8 +252,9 @@ void serve_forever(int *socket_number, void (*request_handler)(int)) {
         client_address.sin_port);
 
     // TODO: Change me?
-    request_handler(client_socket_number);
-    close(client_socket_number);
+    //request_handler(client_socket_number);
+    wq_push(&work_queue, client_socket_number);
+    
 
     printf("Accepted connection from %s on port %d\n",
         inet_ntoa(client_address.sin_addr),
