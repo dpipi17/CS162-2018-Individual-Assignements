@@ -16,12 +16,13 @@
 
 #include "libhttp.h"
 #include "wq.h"
+// for debug
+int finished;
+pthread_mutex_t mutex; 	
 
 struct proxy_node {
   int from;
   int to;
-  int * finished;
-  pthread_mutex_t * mutex;
 };
 
 /*
@@ -31,7 +32,6 @@ struct proxy_node {
  * command line arguments (already implemented for you).
  */
 wq_t work_queue;
-void (*request_handler_for_thread)(int);
 int num_threads;
 int server_port;
 char *server_files_directory;
@@ -118,11 +118,10 @@ void handle_files_request(int fd) {
 }
 
 
-void proxy_thread_job(void * args) {
+void * proxy_thread_job(void * args) {
   struct proxy_node * node;
   node = (struct proxy_node *)args;
-  
-  char buffer[50000];
+  char * buffer[100000];
 
   int read_bytes_size, write_bytes_size;
   while (1) {
@@ -133,19 +132,13 @@ void proxy_thread_job(void * args) {
     if (write_bytes_size <= 0) break;
   }
 
-  pthread_mutex_lock(node->mutex);
-  if (*node->finished == 0) {
-    *node->finished = 1;
-    if (shutdown(node->from, SHUT_RDWR) == -1) {
-      close(node->from);
-    }
-
-    if (shutdown(node->to, SHUT_RDWR) == -1) {
-      close(node->to);
-    }
-  }
-  pthread_mutex_unlock(node->mutex);
-  pthread_exit(NULL);
+  shutdown(node->from, SHUT_WR);
+  // for debug
+  // pthread_mutex_lock(&mutex);
+  // finished++;
+  // printf("finished: %ld %ld %ld \n", finished, node->from, node->to);
+  // pthread_mutex_unlock(&mutex);
+  return NULL;
 }
 
 /*
@@ -160,7 +153,6 @@ void proxy_thread_job(void * args) {
  *   +--------+     +------------+     +--------------+
  */
 void handle_proxy_request(int fd) {
-  printf("handle_proxy_request------\n");
   /*
   * The code below does a DNS lookup of server_proxy_hostname and 
   * opens a connection to it. Please do not modify.
@@ -202,34 +194,22 @@ void handle_proxy_request(int fd) {
 
   }
 
-  int finished = 0;
-  pthread_mutex_t mutex;
-  pthread_mutex_init(&mutex, NULL);
+  pthread_t * threads;
+  threads = malloc(sizeof(pthread_t) * 2);
 
-  struct proxy_node first_node;
-  first_node.from = client_socket_fd;
-  first_node.to = fd;
-  first_node.finished = &finished;
-  first_node.mutex = &mutex;
-  pthread_t first_thread;
-  pthread_create(&first_thread, NULL, (void*)&proxy_thread_job, &first_node);
+  struct proxy_node * first_node = malloc(sizeof(struct proxy_node));
+  first_node->from = client_socket_fd;
+  first_node->to = fd;
+  pthread_create(&threads[0], NULL, proxy_thread_job, (void*)first_node);
 
-  struct proxy_node second_node;
-  second_node.from = fd;
-  second_node.to = client_socket_fd;
-  second_node.finished = &finished;
-  second_node.mutex = &mutex;
-  pthread_t second_thread;
-  pthread_create(&second_thread, NULL, (void*)&proxy_thread_job, &second_node);
-
-  pthread_join(first_thread, NULL);
-  pthread_join(second_thread, NULL);
-
-  pthread_mutex_destroy(&mutex);
+  struct proxy_node * second_node = malloc(sizeof(struct proxy_node));
+  second_node->from = fd;
+  second_node->to = client_socket_fd;  
+  pthread_create(&threads[1], NULL, proxy_thread_job, (void*)second_node);
 }
 
-void* thread_job() {
-
+void* thread_job(void * args) {
+  void (*request_handler_for_thread)(int) = args;
   while (1) {
     int client_socket_fd;
     client_socket_fd = wq_pop(&work_queue);
@@ -243,11 +223,11 @@ void* thread_job() {
 void init_thread_pool(int num_threads, void (*request_handler)(int)) {
   pthread_t * threads;
   threads = malloc(sizeof(pthread_t) * num_threads);
-  request_handler_for_thread = request_handler;
-
+  pthread_mutex_init(&mutex, NULL);
+  finished = 0;
   int i;
   for(i = 0; i < num_threads; i++) {
-    pthread_create(&threads[i], NULL, &thread_job, NULL);
+    pthread_create(&threads[i], NULL, thread_job, request_handler);
   }
 }
 
